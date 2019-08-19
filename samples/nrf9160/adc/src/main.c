@@ -12,85 +12,123 @@
 #include <uart.h>
 #include <adc.h>
 #include <zephyr.h>
-#include <nrfx_saadc.h> 
+#include <nrfx.h>
+#include <nrfx_saadc.h>
+//#include <hal/nrf_saadc.h>
+//#include <nrfx_dppi.h> 
 
-struct device *adc_dev;
+
 struct device *gpio_dev;
 
-#include <hal/nrf_saadc.h>
-#define ADC_DEVICE_NAME DT_ADC_0_NAME
-#define ADC_RESOLUTION 10
-#define ADC_GAIN ADC_GAIN_1_6
-#define ADC_REFERENCE ADC_REF_INTERNAL
-#define ADC_ACQUISITION_TIME ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 3)
-#define ADC_1ST_CHANNEL_ID 0
-#define ADC_1ST_CHANNEL_INPUT NRF_SAADC_INPUT_AIN0
-#define ADC_2ND_CHANNEL_ID 2
-#define ADC_2ND_CHANNEL_INPUT NRF_SAADC_INPUT_AIN2
-#define ADC_3RD_CHANNEL_ID 3
-#define ADC_3RD_CHANNEL_INPUT NRF_SAADC_INPUT_AIN3
+#define SAADC_DEFAULT_CONFIG                                               \
+{                                                                               \
+    .resolution         = (nrf_saadc_resolution_t)NRFX_SAADC_CONFIG_RESOLUTION, \
+    .oversample         = (nrf_saadc_oversample_t)NRFX_SAADC_CONFIG_OVERSAMPLE, \
+    .interrupt_priority = NRFX_SAADC_CONFIG_IRQ_PRIORITY,                       \
+    .low_power_mode     = NRFX_SAADC_CONFIG_LP_MODE                             \
+}
 
-static const struct adc_channel_cfg m_1st_channel_cfg = {
-	.gain = ADC_GAIN,
-	.reference = ADC_REFERENCE,
-	.acquisition_time = NRF_SAADC_ACQTIME_3US,
-	.channel_id = ADC_1ST_CHANNEL_ID,
-#if defined(CONFIG_ADC_CONFIGURABLE_INPUTS)
-	.input_positive = ADC_1ST_CHANNEL_INPUT,
-#endif
-};
+#define SAADC_DEFAULT_CHANNEL_CONFIG_SE(PIN_P) \
+{                                                   \
+    .resistor_p = NRF_SAADC_RESISTOR_DISABLED,      \
+    .resistor_n = NRF_SAADC_RESISTOR_DISABLED,      \
+    .gain       = NRF_SAADC_GAIN1_6,                \
+    .reference  = NRF_SAADC_REFERENCE_INTERNAL,     \
+    .acq_time   = NRF_SAADC_ACQTIME_3US,           \
+    .mode       = NRF_SAADC_MODE_SINGLE_ENDED,      \
+    .burst      = NRF_SAADC_BURST_DISABLED,         \
+    .pin_p      = (nrf_saadc_input_t)(PIN_P),       \
+    .pin_n      = NRF_SAADC_INPUT_DISABLED          \
+}
 
-static const struct adc_channel_cfg m_2nd_channel_cfg = {
-	.gain = ADC_GAIN,
-	.reference = ADC_REFERENCE,
-	.acquisition_time = NRF_SAADC_ACQTIME_3US,
-	.channel_id = ADC_2ND_CHANNEL_ID,
-#if defined(CONFIG_ADC_CONFIGURABLE_INPUTS)
-	.input_positive = ADC_2ND_CHANNEL_INPUT,
-#endif
-};
-
-static const struct adc_channel_cfg m_3rd_channel_cfg = {
-	.gain = ADC_GAIN,
-	.reference = ADC_REFERENCE,
-	.acquisition_time = NRF_SAADC_ACQTIME_3US,
-	.channel_id = ADC_3RD_CHANNEL_ID,
-#if defined(CONFIG_ADC_CONFIGURABLE_INPUTS)
-	.input_positive = ADC_3RD_CHANNEL_INPUT,
-#endif
-};
+nrf_saadc_channel_config_t saadc_channel_config = SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_AIN0);
+static bool adcCalibrateDone;
 
 
 #define BUFFER_SIZE 3
-static s16_t m_sample_buffer[BUFFER_SIZE];
+static nrf_saadc_value_t m_sample_buffer[BUFFER_SIZE];
+
+static void saadc_callback(nrfx_saadc_evt_t const * p_event){
+
+    if ( p_event->type == NRFX_SAADC_EVT_DONE )
+    {
+       printk("ADC raw value: %d\n", m_sample_buffer[0]);
+    }
+    else if( p_event->type == NRFX_SAADC_EVT_CALIBRATEDONE )
+    {
+      adcCalibrateDone = true;
+    }
+}
+
+void InitAdcModule(void)
+{
+    nrfx_err_t err_code;
+    nrfx_saadc_config_t drv_saadc_cfg = SAADC_DEFAULT_CONFIG;
+		
+    err_code = nrfx_saadc_init( &drv_saadc_cfg, saadc_callback );
+    if(err_code != NRFX_SUCCESS){
+        //Blah error
+    }
+	
+    adcCalibrateDone = false;
+    err_code = nrfx_saadc_calibrate_offset( );
+    if(err_code != NRFX_SUCCESS){
+        //Blah error
+    }
+	
+    if( err_code == NRFX_SUCCESS )
+    {
+	err_code = 0;
+	while( !adcCalibrateDone );  
+    }
+	
+}
+
+//void timer_handler(nrf_timer_event_t event_type, void * p_context)
+//{
+//
+//}
+
+
+//void saadc_sampling_event_init(void)
+//{
+//    ret_code_t err_code;
+//
+//    err_code = nrf_drv_ppi_init();
+//    APP_ERROR_CHECK(err_code);
+//
+//    nrf_drv_timer_config_t timer_cfg = NRF_DRV_TIMER_DEFAULT_CONFIG;
+//    timer_cfg.bit_width = NRF_TIMER_BIT_WIDTH_32;
+//    err_code = nrf_drv_timer_init(&m_timer, &timer_cfg, timer_handler);
+//    APP_ERROR_CHECK(err_code);
+//
+//    /* setup m_timer for compare event every 400ms */
+//    uint32_t ticks = nrf_drv_timer_ms_to_ticks(&m_timer, 400);
+//    nrf_drv_timer_extended_compare(&m_timer,
+//                                   NRF_TIMER_CC_CHANNEL0,
+//                                   ticks,
+//                                   NRF_TIMER_SHORT_COMPARE0_CLEAR_MASK,
+//                                   false);
+//    nrf_drv_timer_enable(&m_timer);
+//
+//    uint32_t timer_compare_event_addr = nrf_drv_timer_compare_event_address_get(&m_timer,
+//                                                                                NRF_TIMER_CC_CHANNEL0);
+//    uint32_t saadc_sample_task_addr   = nrf_drv_saadc_sample_task_get();
+//
+//    /* setup ppi channel so that timer compare event is triggering sample task in SAADC */
+//    err_code = nrf_drv_ppi_channel_alloc(&m_ppi_channel);
+//    APP_ERROR_CHECK(err_code);
+//
+//    err_code = nrf_drv_ppi_channel_assign(m_ppi_channel,
+//                                          timer_compare_event_addr,
+//                                          saadc_sample_task_addr);
+//    APP_ERROR_CHECK(err_code);
+//}
 
 static int adc_sample(void)
 {
 	int ret;
 
-
-        const struct adc_sequence_options options = {
-                .interval_us = 0,
-                .extra_samplings = 0,
-
-        };
-
-	const struct adc_sequence sequence = {
-		.channels = BIT(ADC_1ST_CHANNEL_ID) | BIT(ADC_2ND_CHANNEL_ID) | BIT(ADC_3RD_CHANNEL_ID),
-		.buffer = m_sample_buffer,
-		.buffer_size = sizeof(m_sample_buffer),
-		.resolution = ADC_RESOLUTION,
-                .oversampling = 0,
-                .calibrate = false,
-                .options = &options,
-	};
-
-	if (!adc_dev) {
-		return -1;
-	}
-        gpio_pin_write(gpio_dev, 10, 1);    
-	ret = adc_read(adc_dev, &sequence);
-        gpio_pin_write(gpio_dev, 10, 0);
 
 	/*printk("ADC read err: %d\n", ret);
 
@@ -105,7 +143,6 @@ static int adc_sample(void)
 */
 	return ret;
 }
-
 
 
 static inline void nrf_delay_us(u32_t microsec)
@@ -124,41 +161,22 @@ static inline void nrf_delay_us(u32_t microsec)
 
 int main(void)
 {
-	int err;
-        int timer_count = 0;
+	nrfx_err_t err;
+        nrf_saadc_value_t  adc_value;
 
 	printk("nrf91 saadc sampling AIN0 (P0.13)\n");
 	printk("Example requires secure_boot to have ");
 	printk("SAADC set to non-secure!\n");
 	printk("If not; BusFault/UsageFault will be triggered\n");
 
-	adc_dev = device_get_binding("ADC_0");
-	if (!adc_dev) {
-		printk("device_get_binding ADC_0 failed\n");
-	}
-	err = adc_channel_setup(adc_dev, &m_1st_channel_cfg);
-	if (err) {
-		printk("Error in adc setup: %d\n", err);
-	}
-
-        err = adc_channel_setup(adc_dev, &m_2nd_channel_cfg);
-	if (err) {
-		printk("Error in adc setup: %d\n", err);
-	}
-
-        err = adc_channel_setup(adc_dev, &m_3rd_channel_cfg);
-	if (err) {
-		printk("Error in adc setup: %d\n", err);
-	}
-
-        gpio_dev = device_get_binding(DT_GPIO_P0_DEV_NAME);
-
-        if (!gpio_dev) {
-		printk("Cannot bind gpio device");
-		return -ENODEV;
-	}
-
-        err = gpio_pin_configure(gpio_dev, 10, GPIO_DIR_OUT);//Set pin 0 to output
+//        gpio_dev = device_get_binding(DT_GPIO_P0_DEV_NAME);
+//
+//        if (!gpio_dev) {
+//		printk("Cannot bind gpio device");
+//		return -ENODEV;
+//	}
+//
+//        err = gpio_pin_configure(gpio_dev, 10, GPIO_DIR_OUT);//Set pin 0 to output
 
 
         //Startup the high frequency clock
@@ -166,18 +184,14 @@ int main(void)
 	while (NRF_CLOCK_NS->EVENTS_HFCLKSTARTED == 0);
 
         //Configure the timer
-        NRF_TIMER1_NS->TASKS_CLEAR = 1;
-	NRF_TIMER1_NS->PRESCALER = 0;//Run at 16MHz
+//        NRF_TIMER1_NS->TASKS_CLEAR = 1;
+//	NRF_TIMER1_NS->PRESCALER = 0;//Run at 16MHz
 
+        InitAdcModule();
 
-	/* Trigger offset calibration
-	 * As this generates a _DONE and _RESULT event
-	 * the first result will be incorrect.
-	 */
-	NRF_SAADC_NS->TASKS_CALIBRATEOFFSET = 1;
 	while (1) {
 
-		err = adc_sample();
+		err = nrfx_saadc_sample();
 
 		if (err) {
 			printk("Error in adc sampling: %d\n", err);

@@ -12,6 +12,7 @@
 #include <uart.h>
 #include <adc.h>
 #include <zephyr.h>
+#include <nrfx_saadc.h> 
 
 struct device *adc_dev;
 struct device *gpio_dev;
@@ -21,7 +22,7 @@ struct device *gpio_dev;
 #define ADC_RESOLUTION 10
 #define ADC_GAIN ADC_GAIN_1_6
 #define ADC_REFERENCE ADC_REF_INTERNAL
-#define ADC_ACQUISITION_TIME ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 10)
+#define ADC_ACQUISITION_TIME ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 3)
 #define ADC_1ST_CHANNEL_ID 0
 #define ADC_1ST_CHANNEL_INPUT NRF_SAADC_INPUT_AIN0
 #define ADC_2ND_CHANNEL_ID 2
@@ -32,7 +33,7 @@ struct device *gpio_dev;
 static const struct adc_channel_cfg m_1st_channel_cfg = {
 	.gain = ADC_GAIN,
 	.reference = ADC_REFERENCE,
-	.acquisition_time = ADC_ACQ_TIME_DEFAULT,
+	.acquisition_time = NRF_SAADC_ACQTIME_3US,
 	.channel_id = ADC_1ST_CHANNEL_ID,
 #if defined(CONFIG_ADC_CONFIGURABLE_INPUTS)
 	.input_positive = ADC_1ST_CHANNEL_INPUT,
@@ -42,7 +43,7 @@ static const struct adc_channel_cfg m_1st_channel_cfg = {
 static const struct adc_channel_cfg m_2nd_channel_cfg = {
 	.gain = ADC_GAIN,
 	.reference = ADC_REFERENCE,
-	.acquisition_time = ADC_ACQ_TIME_DEFAULT,
+	.acquisition_time = NRF_SAADC_ACQTIME_3US,
 	.channel_id = ADC_2ND_CHANNEL_ID,
 #if defined(CONFIG_ADC_CONFIGURABLE_INPUTS)
 	.input_positive = ADC_2ND_CHANNEL_INPUT,
@@ -52,7 +53,7 @@ static const struct adc_channel_cfg m_2nd_channel_cfg = {
 static const struct adc_channel_cfg m_3rd_channel_cfg = {
 	.gain = ADC_GAIN,
 	.reference = ADC_REFERENCE,
-	.acquisition_time = ADC_ACQ_TIME_DEFAULT,
+	.acquisition_time = NRF_SAADC_ACQTIME_3US,
 	.channel_id = ADC_3RD_CHANNEL_ID,
 #if defined(CONFIG_ADC_CONFIGURABLE_INPUTS)
 	.input_positive = ADC_3RD_CHANNEL_INPUT,
@@ -67,11 +68,21 @@ static int adc_sample(void)
 {
 	int ret;
 
+
+        const struct adc_sequence_options options = {
+                .interval_us = 0,
+                .extra_samplings = 0,
+
+        };
+
 	const struct adc_sequence sequence = {
 		.channels = BIT(ADC_1ST_CHANNEL_ID) | BIT(ADC_2ND_CHANNEL_ID) | BIT(ADC_3RD_CHANNEL_ID),
 		.buffer = m_sample_buffer,
 		.buffer_size = sizeof(m_sample_buffer),
 		.resolution = ADC_RESOLUTION,
+                .oversampling = 0,
+                .calibrate = false,
+                .options = &options,
 	};
 
 	if (!adc_dev) {
@@ -125,7 +136,7 @@ int main(void)
 	if (!adc_dev) {
 		printk("device_get_binding ADC_0 failed\n");
 	}
-	/*err = adc_channel_setup(adc_dev, &m_1st_channel_cfg);
+	err = adc_channel_setup(adc_dev, &m_1st_channel_cfg);
 	if (err) {
 		printk("Error in adc setup: %d\n", err);
 	}
@@ -139,7 +150,7 @@ int main(void)
 	if (err) {
 		printk("Error in adc setup: %d\n", err);
 	}
-*/
+
         gpio_dev = device_get_binding(DT_GPIO_P0_DEV_NAME);
 
         if (!gpio_dev) {
@@ -166,19 +177,7 @@ int main(void)
 	NRF_SAADC_NS->TASKS_CALIBRATEOFFSET = 1;
 	while (1) {
 
-             //   timer_count = 0;
-              //  NRF_TIMER1_NS->TASKS_CLEAR = 1;//Clear the timer
-              //  NRF_TIMER1_NS->TASKS_START = 1;//Start the timer
-
-
-           //     gpio_pin_write(gpio_dev, 10, 1);
 		err = adc_sample();
-//                gpio_pin_write(gpio_dev, 10, 0);
-              //  NRF_TIMER1_NS->TASKS_CAPTURE[0] = 1;
-                
-            //    NRF_TIMER1_NS->TASKS_STOP = 1;	
-            //    timer_count = NRF_TIMER1_NS->CC[0];
-           //     printk("Timer Count: %d\n", err);
 
 		if (err) {
 			printk("Error in adc sampling: %d\n", err);
